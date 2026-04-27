@@ -69,21 +69,10 @@ def check_chapter(path: Path) -> dict:
     return {'file': str(path), 'exists': True, 'word_count': word_count, 'status': status, 'icon': icon, 'message': msg}
 
 
-def find_chapter(num: str) -> Path | None:
-    """通过序号查找章节文件"""
-    # 去除前导零但不变成空字符串，如 '07' -> 7, '7' -> 7, '007' -> 7
-    num_str = str(int(num)) if num.isdigit() else num
-    for pattern in [f'第{num_str}章*.md', f'第{num.zfill(2)}章*.md', f'第{num.zfill(3)}章*.md']:
-        matches = list(Path('output').glob(pattern))
-        if matches:
-            return matches[0]
-    return None
-
-
 def main():
     if len(sys.argv) < 2:
         print('用法:')
-        print('  检查单章: python check_chapter_wordcount.py <序号>')
+        print('  检查单章: python check_chapter_wordcount.py <文件路径>')
         print('  检查全部: python check_chapter_wordcount.py --all')
         return
 
@@ -91,17 +80,7 @@ def main():
     if sys.argv[1] == '--all':
         results = [check_chapter(p) for p in sorted(Path('output').glob('第*.md'))]
     else:
-        arg = sys.argv[1]
-        # 纯数字则作为序号查找，否则作为文件路径
-        if arg.isdigit():
-            if path := find_chapter(arg):
-                print(f'找到: {path}')
-                results = [check_chapter(path)]
-            else:
-                print(f'错误: 未找到第{arg}章')
-                return
-        else:
-            results = [check_chapter(Path(arg))]
+        results = [check_chapter(Path(sys.argv[1]))]
 
     if not results:
         print('没有找到章节文件')

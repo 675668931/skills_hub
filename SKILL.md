@@ -359,7 +359,7 @@ output/提示词.md        → 主角设定、世界观、爽点设计
 
 ```bash
 # 检查单个章节（必须执行）
-python scripts/check_chapter_wordcount.py 01
+python scripts/check_chapter_wordcount.py output/第01章_章节名.md
 
 # 检查所有章节
 python scripts/check_chapter_wordcount.py --all
