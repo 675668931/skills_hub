@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import re
 import sys
+from difflib import SequenceMatcher
 from collections import Counter
 from pathlib import Path
 
 REQUIRED_PREFIXES = ["第", "【本章概要】", "【情绪曲线】", "【涉及角色】", "【涉及地点】"]
 BODY_FORBIDDEN_PATTERNS = [
+    (re.compile(r"(?m)^\s*正文：\s*$"), "正文残留格式标签：正文："),
     (re.compile(r"本章|下一章|后文|剧情|读者|作者|伏笔"), "正文含作者视角/写作备注/元叙事词"),
     (re.compile(r"第\s*\d+\s*章|第\s*[一二三四五六七八九十百千万零〇两]+\s*章"), "正文直接提章节号"),
 ]
@@ -23,6 +25,9 @@ MAX_PARAGRAPH_CHARS = 180
 MAX_LINE_CHARS = 80
 MAX_BLANK_RUN = 2
 TAIL_WINDOW = 8
+SIMILARITY_THRESHOLD = 0.55
+MIN_SIMILAR_BODY_CHARS = 900
+SHORT_SOUND_PATTERN = re.compile(r"^[咔砰轰叮嗤滋啪咚当噗嗖铛疼][。！]?$")
 
 ABSTRACT_TAIL_PATTERNS = [
     re.compile(r"意识到|明白|觉得|确认|重新评估|震惊|敬畏|沉默|终于理解|足以|真正可怕"),
@@ -131,6 +136,13 @@ def check_file(path: Path) -> list[str]:
             first_ln = next(ln for ln, p in paragraphs if strip_space(p) == para)
             errors.append(f"第{first_ln}行：疑似重复段落出现 {count} 次")
 
+    short_sounds = [(ln, para) for ln, para in paragraphs if SHORT_SOUND_PATTERN.fullmatch(para)]
+    for i in range(len(short_sounds) - 2):
+        a, b, c = short_sounds[i : i + 3]
+        if a[1] == b[1] == c[1] and c[0] - a[0] <= 6:
+            errors.append(f"第{a[0]}行起：连续短拟声词堆叠“{a[1]}”，需改为具体动作/结果描写")
+            break
+
     tail = paragraphs[-TAIL_WINDOW:]
     if len(tail) >= TAIL_WINDOW:
         abstract_count = sum(any(p.search(text) for p in ABSTRACT_TAIL_PATTERNS) for _, text in tail)
@@ -140,6 +152,25 @@ def check_file(path: Path) -> list[str]:
             errors.append(f"第{tail[0][0]}行起：章尾疑似公式化总结/感慨堆叠，需改为具体场景推进")
 
     return errors
+
+
+def body_fingerprint(path: Path) -> str:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    body = [line.strip() for _, line in extract_body(lines) if line.strip()]
+    # 去掉章节元信息和空白，保留正文顺序，用于抓“复制上一章只换角色名/末尾补几段”。
+    text = "".join(strip_space(line) for line in body)
+    # 轻度归一化常见替换，避免“富冈义勇→隐部队队长”这种换皮逃过检查。
+    text = re.sub(r"[，。！？、；：‘’“”《》（）()\[\]【】]", "", text)
+    text = re.sub(r"富冈义勇|隐部队队长|炭治郎|祢豆子|林彻", "角色", text)
+    return text
+
+
+def body_similarity(prev: Path, cur: Path) -> float:
+    prev_text = body_fingerprint(prev)
+    cur_text = body_fingerprint(cur)
+    if min(len(prev_text), len(cur_text)) < MIN_SIMILAR_BODY_CHARS:
+        return 0.0
+    return SequenceMatcher(None, prev_text, cur_text).ratio()
 
 
 def tail_signature(path: Path) -> tuple[int, tuple[str, ...]]:
@@ -161,6 +192,10 @@ def check_batch(paths: list[Path]) -> list[tuple[Path, str]]:
         cur_no, cur_sig = tail_signature(cur)
         if cur_no == prev_no + 1 and len(prev_sig) >= 2 and prev_sig == cur_sig:
             batch_errors.append((cur, f"与上一章章尾模式重复 {cur_sig}，需重写尾部骨架"))
+        if cur_no == prev_no + 1:
+            similarity = body_similarity(prev, cur)
+            if similarity >= SIMILARITY_THRESHOLD:
+                batch_errors.append((cur, f"与上一章正文相似度过高 {similarity:.2%}，疑似复制换皮；必须按本章事件目标整章重写"))
     return batch_errors
 
 
