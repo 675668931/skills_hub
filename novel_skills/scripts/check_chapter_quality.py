@@ -159,10 +159,25 @@ def body_fingerprint(path: Path) -> str:
     body = [line.strip() for _, line in extract_body(lines) if line.strip()]
     # 去掉章节元信息和空白，保留正文顺序，用于抓“复制上一章只换角色名/末尾补几段”。
     text = "".join(strip_space(line) for line in body)
-    # 轻度归一化常见替换，避免“富冈义勇→隐部队队长”这种换皮逃过检查。
+    # 轻度归一化本章元数据里的角色名，避免“角色A→角色B”这种换皮逃过检查。
+    # 角色名从【涉及角色】读取，保持脚本对不同小说项目通用，避免写死某个项目的人名。
     text = re.sub(r"[，。！？、；：‘’“”《》（）()\[\]【】]", "", text)
-    text = re.sub(r"富冈义勇|隐部队队长|炭治郎|祢豆子|林彻", "角色", text)
+    for name in extract_character_names(lines):
+        text = text.replace(name, "角色")
     return text
+
+
+def extract_character_names(lines: list[str]) -> list[str]:
+    """从【涉及角色】元数据提取角色名，用于相似度归一化。"""
+    for line in lines[:12]:
+        if line.startswith("【涉及角色】"):
+            raw = line.split("】", 1)[-1]
+            names = re.split(r"[、,，/；;\s]+", raw)
+            # 长名先替换，避免短名覆盖长名的一部分；过滤泛称，保留项目无关。
+            generic = {"角色", "众人", "路人", "配角", "主角", "反派", "系统"}
+            cleaned = [n for n in names if 2 <= len(n) <= 12 and n not in generic]
+            return sorted(set(cleaned), key=len, reverse=True)
+    return []
 
 
 def body_similarity(prev: Path, cur: Path) -> float:

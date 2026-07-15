@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""章节字数检查脚本 - 每章字数必须控制在 2000-3000 字"""
+"""章节字数检查脚本 - 每章正文字数必须控制在 2000-2500 字"""
 
 import re
 import sys
 from pathlib import Path
 
-MIN_WORDS, MAX_WORDS = 2000, 3000
+MIN_WORDS, MAX_WORDS = 2000, 2500
 
 
 def count_chinese_words(text: str) -> int:
